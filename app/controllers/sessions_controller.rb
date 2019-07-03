@@ -21,13 +21,12 @@ class SessionsController < ApplicationController
   include Emailer
 
   LDAP_ATTRIBUTE_MAPPING = {
-    name: [:cn],
-    first_name: [:givenName],
-    last_name: [:sn],
-    email: [:mail, :email, :userPrincipalName],
-    nickname: [:uid, :userid, :sAMAccountName],
-    image: [:jpegPhoto],
-    description: [:description]
+    'name' => [:cn],
+    'first_name' => [:givenName],
+    'last_name' => [:sn],
+    'email' => [:mail, :email, :userPrincipalName],
+    'nickname' => [:uid, :userid, :sAMAccountName],
+    'image' => [:jpegPhoto]
   }
 
   skip_before_action :verify_authenticity_token, only: [:omniauth, :fail]
@@ -64,9 +63,8 @@ class SessionsController < ApplicationController
         username: Rails.configuration.ldap_bind_dn,
         password: Rails.configuration.ldap_password
       },
+      encryption: Rails.configuration.ldap_encryption
     )
-
-    ldap.encryption(Rails.configuration.ldap_encryption)
 
     result = ldap.bind_as(
       base: Rails.configuration.ldap_base,
@@ -84,7 +82,7 @@ class SessionsController < ApplicationController
     @auth = {}
     @auth['info'] = {}
     @auth['uid'] = result.dn
-    @auth['provider'] = 'ldap'
+    @auth['provider'] = :ldap
 
     LDAP_ATTRIBUTE_MAPPING.each do |key, value|
       value.each do |v|
