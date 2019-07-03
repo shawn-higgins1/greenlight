@@ -55,22 +55,7 @@ class SessionsController < ApplicationController
   end
 
   def ldap
-    ldap = Net::LDAP.new(
-      host: Rails.configuration.ldap_host,
-      port: Rails.configuration.ldap_port,
-      auth: {
-        method: :simple,
-        username: Rails.configuration.ldap_bind_dn,
-        password: Rails.configuration.ldap_password
-      },
-      encryption: Rails.configuration.ldap_encryption
-    )
-
-    result = ldap.bind_as(
-      base: Rails.configuration.ldap_base,
-      filter: "(#{Rails.configuration.ldap_uid}=#{session_params[:password]})",
-      password: session_params[:password]
-    )
+    result = send_ldap_request
 
     if result
       result = result.first
@@ -79,20 +64,7 @@ class SessionsController < ApplicationController
       return
     end
 
-    @auth = {}
-    @auth['info'] = {}
-    @auth['uid'] = result.dn
-    @auth['provider'] = :ldap
-
-    LDAP_ATTRIBUTE_MAPPING.each do |key, value|
-      value.each do |v|
-        if result[v].first
-          @auth['info'][key] = result[v].first
-          break
-        end
-      end
-    end
-
+    parse_auth(result)
     process_external_signin
   end
 
@@ -154,5 +126,73 @@ class SessionsController < ApplicationController
                                            invite_registration && !@user_exists
 
     login(user)
+  end
+
+  def send_ldap_request
+    host = ''
+    port = 389
+    bind_dn = ''
+    password = ''
+    encryption = nil
+    base = ''
+    uid = ''
+
+    if Rails.configuration.loadbalanced_configuration
+      customer = parse_user_domain(request.host)
+      customer_info = retrieve_provider_info(customer, 'api2', 'getUserGreenlightCredentials')
+
+      host = customer_info['LDAP_SERVER']
+      port = customer_info['LDAP_PORT'].to_i != 0 ? customer_info['LDAP_PORT'].to_i : 389
+      bind_dn = customer_info['LDAP_BIND_DN']
+      password = customer_info['LDAP_PASSWORD']
+      encryption = config.ldap_encryption = if customer_info['LDAP_METHOD'] == 'ssl'
+                                              'simple_tls'
+                                            elsif customer_info['LDAP_METHOD'] == 'tls'
+                                              'start_tls'
+                                            end
+      base = customer_info['LDAP_BASE']
+      uid = customer_info['LDAP_UID']
+    else
+      host = Rails.configuration.ldap_host
+      port = Rails.configuration.ldap_port
+      bind_dn = Rails.configuration.ldap_bind_dn
+      password = Rails.configuration.ldap_password
+      encryption = Rails.configuration.ldap_encryption
+      base = Rails.configuration.ldap_base
+      uid = Rails.configuration.ldap_uid
+    end
+
+    ldap = Net::LDAP.new(
+      host: host,
+      port: port,
+      auth: {
+        method: :simple,
+        username: bind_dn,
+        password: password
+      },
+      encryption: encryption
+    )
+
+    ldap.bind_as(
+      base: base,
+      filter: "(#{uid}=#{session_params[:password]})",
+      password: session_params[:password]
+    )
+  end
+
+  def parse_auth(result)
+    @auth = {}
+    @auth['info'] = {}
+    @auth['uid'] = result.dn
+    @auth['provider'] = :ldap
+
+    LDAP_ATTRIBUTE_MAPPING.each do |key, value|
+      value.each do |v|
+        if result[v].first
+          @auth['info'][key] = result[v].first
+          break
+        end
+      end
+    end
   end
 end
