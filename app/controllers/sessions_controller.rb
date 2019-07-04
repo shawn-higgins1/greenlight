@@ -106,6 +106,10 @@ class SessionsController < ApplicationController
   def process_external_signin
     @user_exists = check_user_exists
 
+    if !@user_exists && @auth['provider'] == "twitter"
+      return redirect_to root_path, flash: { alert: I18n.t("registration.deprecated.twitter_signup") }
+    end
+
     # If using invitation registration method, make sure user is invited
     return redirect_to root_path, flash: { alert: I18n.t("registration.invite.no_invite") } unless passes_invite_reqs
 
@@ -124,6 +128,30 @@ class SessionsController < ApplicationController
 
     send_invite_user_signup_email(user) if Rails.configuration.enable_email_verification &&
                                            invite_registration && !@user_exists
+
+    if @auth['provider'] == "twitter"
+      session[:old_twitter_user_id] = user.id
+      flash[:alert] = I18n.t("registration.deprecated.twitter_signin", signin_path)
+    elsif !session[:old_twitter_user_id].nil?
+      old_user = User.find(session[:old_twitter_user_id])
+
+      old_home_room = old_user.main_room
+
+      old_home_room.name = "Old " + old_home_room.name
+      old_home_room.owner = user
+      old_home_room.save!
+
+      old_user.rooms.each do |room|
+        room.owner = user
+        room.save!
+      end
+
+      # Query for the old user again so the migrated rooms don't get deleted
+      old_user.reload
+      old_user.destroy!
+
+      session[:old_twitter_user_id] = nil
+    end
 
     login(user)
   end

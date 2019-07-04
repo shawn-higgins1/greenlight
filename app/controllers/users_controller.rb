@@ -62,6 +62,7 @@ class UsersController < ApplicationController
 
   # GET /signin
   def signin
+    flash[:alert] = I18n.t("registration.deprecated.new_signin") unless session[:old_twitter_user_id].nil?
   end
 
   # GET /ldap_signin

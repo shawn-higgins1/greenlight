@@ -195,19 +195,50 @@ describe SessionsController, type: :controller do
         allow(Rails.configuration).to receive(:loadbalanced_configuration).and_return(false)
       end
 
-      it "should create and login user with omniauth twitter" do
-        request.env["omniauth.auth"] = OmniAuth.config.mock_auth[:twitter]
-        get :omniauth, params: { provider: :twitter }
+      context 'twitter deprecation' do
+        it "should not allow new user sign up with omniauth twitter" do
+          request.env["omniauth.auth"] = OmniAuth.config.mock_auth[:twitter]
+          get :omniauth, params: { provider: :twitter }
 
-        u = User.last
-        expect(u.provider).to eql("twitter")
-        expect(u.email).to eql("user@twitter.com")
-        expect(@request.session[:user_id]).to eql(u.id)
+          expect(response).to redirect_to(root_path)
+          expect(flash[:alert]).to eq(I18n.t("registration.deprecated.twitter_signup"))
+        end
+
+        it "should notify twitter users that twitter is deprecated" do
+          twitter_user = User.create(name: "Twitter User", email: "user@twitter.com", image: "example.png",
+            username: "twitteruser", email_verified: true, provider: 'twitter', social_uid: "twitter-user")
+
+          request.env["omniauth.auth"] = OmniAuth.config.mock_auth[:twitter]
+          get :omniauth, params: { provider: :twitter }
+
+          expect(flash[:alert]).to eq(I18n.t("registration.deprecated.twitter_signin", signin_path))
+          expect(@request.session[:old_twitter_user_id]).to eql(twitter_user.id)
+        end
+
+        it "should migrate rooms from the twitter account to the google account" do
+          twitter_user = User.create(name: "Twitter User", email: "user@twitter.com", image: "example.png",
+            username: "twitteruser", email_verified: true, provider: 'twitter', social_uid: "twitter-user")
+
+          room = Room.new(name: "Test")
+          room.owner = twitter_user
+          room.save!
+
+          request.env["omniauth.auth"] = OmniAuth.config.mock_auth[:google]
+          get :omniauth, params: { provider: :google }, session: { old_twitter_user_id: twitter_user.id }
+
+          u = User.last
+          expect(u.provider).to eql("google")
+          expect(u.email).to eql("user@google.com")
+          expect(@request.session[:user_id]).to eql(u.id)
+          expect(u.rooms.count).to eq(3)
+          expect(u.rooms.first.name).to eq("Old Home Room")
+          expect(u.rooms[1].name).to eq("Test")
+        end
       end
 
       it "should redirect to root on invalid omniauth login" do
         request.env["omniauth.auth"] = :invalid_credentials
-        get :omniauth, params: { provider: :twitter }
+        get :omniauth, params: { provider: :google }
 
         expect(response).to redirect_to(root_path)
       end
