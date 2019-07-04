@@ -134,3 +134,6 @@ Metrics/CyclomaticComplexity:
 # Checks for method parameter names that contain capital letters, end in numbers, or do not meet a minimal length.
 Naming/UncommunicativeMethodParamName:
   Enabled: false
+
+Metrics/ModuleLength:
+  Max: 150

@@ -129,31 +129,17 @@ class SessionsController < ApplicationController
     send_invite_user_signup_email(user) if Rails.configuration.enable_email_verification &&
                                            invite_registration && !@user_exists
 
-    if @auth['provider'] == "twitter"
-      session[:old_twitter_user_id] = user.id
-      flash[:alert] = I18n.t("registration.deprecated.twitter_signin", signin_path)
-    elsif !session[:old_twitter_user_id].nil?
-      old_user = User.find(session[:old_twitter_user_id])
-
-      old_home_room = old_user.main_room
-
-      old_home_room.name = "Old " + old_home_room.name
-      old_home_room.owner = user
-      old_home_room.save!
-
-      old_user.rooms.each do |room|
-        room.owner = user
-        room.save!
-      end
-
-      # Query for the old user again so the migrated rooms don't get deleted
-      old_user.reload
-      old_user.destroy!
-
-      session[:old_twitter_user_id] = nil
-    end
-
     login(user)
+
+    if @auth['provider'] == "twitter"
+      flash[:alert] = if allow_user_signup? && allow_greenlight_accounts?
+                        I18n.t("registration.deprecated.twitter_signin",
+                          link: signup_path(old_twitter_user_id: user.id))
+                      else
+                        I18n.t("registration.deprecated.twitter_signin",
+                          link: signin_path(old_twitter_user_id: user.id))
+                      end
+    end
   end
 
   def send_ldap_request
